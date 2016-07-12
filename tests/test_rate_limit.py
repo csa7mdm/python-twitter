@@ -1,5 +1,6 @@
 # encoding: utf-8
 
+import time
 import re
 import sys
 import unittest
@@ -9,7 +10,7 @@ import twitter
 import responses
 
 warnings.filterwarnings('ignore', category=DeprecationWarning)
-DEF_URL_RE = re.compile(r'https?://.*\.twitter.com/1\.1/.*')
+DEFAULT_URL = re.compile(r'https?://.*\.twitter.com/1\.1/.*')
 
 
 class ErrNull(object):
@@ -60,7 +61,7 @@ class RateLimitTests(unittest.TestCase):
         self.assertTrue(self.api.rate_limit)
         self.assertTrue(self.api.sleep_on_rate_limit)
 
-        responses.add(responses.GET, url=DEF_URL_RE, body=b'{}', status=200)
+        responses.add(responses.GET, url=DEFAULT_URL, body=b'{}', status=200)
         try:
             self.api.GetStatus(status_id=1234)
             self.api.GetUser(screen_name='test')
@@ -112,7 +113,6 @@ class RateLimitMethodsTests(unittest.TestCase):
         self.api.InitializeRateLimit()
         self.assertTrue(self.api.rate_limit)
 
-
     def tearDown(self):
         sys.stderr = self._stderr
         pass
@@ -157,3 +157,45 @@ class RateLimitMethodsTests(unittest.TestCase):
         limit = self.api.rate_limit.get_limit(
             url='https://api.twitter.com/1.1/not/a/real/endpoint.json')
         self.assertEqual(limit.remaining, 14)
+
+    @responses.activate
+    def testLimitsViaHeaders(self):
+        now = int(time.time())
+        api = twitter.Api(
+            consumer_key='test',
+            consumer_secret='test',
+            access_token_key='test',
+            access_token_secret='test',
+            sleep_on_rate_limit=False)
+
+        self.assertFalse(api.rate_limit)
+
+        # Get initial rate limit data to populate api.rate_limit object
+        with open('testdata/ratelimit.json') as f:
+            resp_data = f.read()
+        url = '%s/application/rate_limit_status.json' % self.api.base_url
+        responses.add(
+            responses.GET,
+            url,
+            body=resp_data,
+            match_querystring=True,
+            status=200)
+        api.InitializeRateLimit()
+
+        # Add a test URL just to have headers present
+        responses.add(
+            method=responses.GET,
+            url=DEFAULT_URL,
+            body='{}',
+            status=200,
+            adding_headers={
+                'x-rate-limit-limit': '63',
+                'x-rate-limit-remaining': '63',
+                'x-rate-limit-reset': '{0}'.format(str(now+63))
+            }
+        )
+        resp = api.GetSearch(term='test')
+        self.assertTrue(api.rate_limit.__dict__)
+        self.assertEqual(api.rate_limit.get_limit('/search/tweets').limit, 63)
+        self.assertEqual(api.rate_limit.get_limit('/search/tweets').remaining, 63)
+        self.assertEqual(api.rate_limit.get_limit('/search/tweets').reset, now+63)

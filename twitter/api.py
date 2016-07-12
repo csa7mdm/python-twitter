@@ -4823,7 +4823,7 @@ class Api(object):
             raise TwitterError(
                 "The twitter.Api instance must be authenticated.")
 
-        if url and self.sleep_on_rate_limit:
+        if url and self.rate_limit:
             limit = self.CheckRateLimit(url)
 
             if limit.remaining == 0:
@@ -4853,7 +4853,7 @@ class Api(object):
         else:
             resp = 0  # if not a POST or GET request
 
-        if url and self.sleep_on_rate_limit and self.rate_limit:
+        if url and self.rate_limit:
             limit = resp.headers.get('x-rate-limit-limit', 0)
             remaining = resp.headers.get('x-rate-limit-remaining', 0)
             reset = resp.headers.get('x-rate-limit-reset', 0)
